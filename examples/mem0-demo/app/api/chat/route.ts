@@ -1,8 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { createDataStreamResponse, jsonSchema, streamText } from "ai";
+import { createDataStreamResponse, generateText, jsonSchema, streamText } from "ai";
 import { addMemories, getMemories } from "@mem0/vercel-ai-provider";
 import { openai } from "@ai-sdk/openai";
+import { createGoogleGenerativeAI } from '@ai-sdk/google';
+const google = createGoogleGenerativeAI({
+  baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/',
+  apiKey: process.env.GEMINI_API_KEY
+});
+// https://ai-sdk.dev/providers/ai-sdk-providers/google-generative-ai
 
 export const runtime = "edge";
 export const maxDuration = 30;
@@ -55,7 +61,7 @@ Assistant: You can mix your hobbies by planning a day that includes all of them.
 `
 
 const retrieveMemories = (memories: any) => {
-  if (memories.length === 0) return "";
+  if (!memories || memories.length === 0) return "";
   const systemPrompt =
     "These are the memories I have stored. Give more weightage to the question by users and try to answer that first. You have to modify your answer based on the memories I have provided. If the memories are irrelevant you can ignore them. Also don't reply to this section of the prompt, or the memories, they are only for your reference. The System prompt starts after text System Message: \n\n";
   const memoriesText = memories
@@ -71,10 +77,22 @@ export async function POST(req: Request) {
   const { messages, system, tools, userId } = await req.json();
 
   const memories = await getMemories(messages, { user_id: userId, rerank: true, threshold: 0.1, output_format: "v1.0" });
+  console.log("memories", memories);
   const mem0Instructions = retrieveMemories(memories);
 
+  const { text } = await generateText({
+    model: openai('gpt-4o-mini'),
+    prompt: '你是谁',
+  });
+  console.log("text1111", text);
+  // const { text } = await generateText({
+  //   model: google('gemini-2.0-flash'),
+  //   prompt: '你是谁',
+  // });
+  // console.log("text1111", text);
+
   const result = streamText({
-    model: openai("gpt-4o"),
+    model: google('gemini-2.0-flash'),
     messages,
     // forward system prompt and tools from the frontend
     system: [SYSTEM_HIGHLIGHT_PROMPT, system, mem0Instructions].filter(Boolean).join("\n"),
@@ -86,26 +104,37 @@ export async function POST(req: Request) {
         },
       ])
     ),
+    // 其他配置参数
+    config: {
+      temperature: 0.2,
+      maxTokens: 1000,
+      apiKey: process.env.GEMINI_API_KEY,  // 通过配置对象设置 API key
+    }
   });
 
   const addMemoriesTask = addMemories(messages, { user_id: userId });
   return createDataStreamResponse({
     execute: async (writer) => {
-      if (memories.length > 0) {
-        writer.writeMessageAnnotation({
-          type: "mem0-get",
-          memories,
-        });
-      }
+      try {
+        if (memories?.length > 0) {
+          writer.writeMessageAnnotation({
+            type: "mem0-get",
+            memories,
+          });
+        }
 
-      result.mergeIntoDataStream(writer);
-
-      const newMemories = await addMemoriesTask;
-      if (newMemories.length > 0) {
-        writer.writeMessageAnnotation({
-          type: "mem0-update",
-          memories: newMemories,
-        });
+        result.mergeIntoDataStream(writer);
+        
+        const newMemories = await addMemoriesTask;
+        if (newMemories?.length > 0) {
+          writer.writeMessageAnnotation({
+            type: "mem0-update",
+            memories: newMemories,
+          });
+        }
+      } catch (error) {
+        console.error("Stream processing error:", error);
+        writer.writeError(error);
       }
     },
   });
