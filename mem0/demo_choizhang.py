@@ -7,39 +7,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-config = {
-    "llm": {
-        "provider": "openai",
-        "config": {
-            "model": "Qwen/Qwen2.5-7B-Instruct",
-            "temperature": 0.2,
-            "max_tokens": 2000
-        }
-    },
-    "embedder": {
-        "provider": "openai",
-        "config": {
-            "model": "netease-youdao/bce-embedding-base_v1",
-            "embedding_dims": 768
-        }
-    },
-    # "embedder": {
-    #     "provider": "gemini",
-    #     "config": {
-    #         "model": "gemini-embedding-exp-03-07"
-    #     }
-    # }
-    "vector_store": {
-        "provider": "qdrant",
-        "config": {
-            "url": os.environ.get("QDRANT_URL"),
-            "api_key": os.environ.get("QDRANT_API_KEY"),
-            "collection_name": "mem0",  # 自定义集合名称
-            "on_disk": True,  # 启用持久化存储
-            "embedding_model_dims": 768  # Gemini Embedding 模型的维度
-        }
-    }
-}
+from mem0.configs.default import get_config
+
+# 获取默认配置
+config = get_config()
 
 # 初始化 OpenAI 客户端
 # openai_client = OpenAI(
